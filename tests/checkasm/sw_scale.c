@@ -256,79 +256,6 @@ static void check_yuv2yuvX(int accurate)
 #undef FILTER_SIZES
 }
 
-
-static void check_yuv2planeX(int accurate)
-{
-    SwsContext *sws;
-    SwsInternal *c;
-#define LARGEST_FILTER 16
-    const int filter_sizes[] = {2, 4, 8, 16};
-#define LARGEST_INPUT_SIZE 512
-    static const int input_sizes[] = {8, 24, 128, 144, 256, 512};
-    const char *accurate_str = (accurate) ? "accurate" : "approximate";
-
-    declare_func_emms(AV_CPU_FLAG_MMX, void,
-                      const int16_t *filter, int filterSize,
-                      const int16_t **src, uint8_t *dest, int dstW,
-                      const uint8_t *dither, int offset);
-
-    const int16_t *src[LARGEST_FILTER];
-    LOCAL_ALIGNED_16(int16_t, src_pixels, [LARGEST_FILTER * LARGEST_INPUT_SIZE]);
-    LOCAL_ALIGNED_16(int16_t, filter_coeff, [LARGEST_FILTER]);
-    LOCAL_ALIGNED_16(uint8_t, dst0, [LARGEST_INPUT_SIZE]);
-    LOCAL_ALIGNED_16(uint8_t, dst1, [LARGEST_INPUT_SIZE]);
-    LOCAL_ALIGNED_16(uint8_t, dither, [LARGEST_INPUT_SIZE]);
-
-    uint8_t d_val = rnd();
-    memset(dither, d_val, LARGEST_INPUT_SIZE);
-    randomize_buffers((uint8_t*)src_pixels, LARGEST_FILTER * LARGEST_INPUT_SIZE * sizeof(int16_t));
-
-    for (int i = 0; i < LARGEST_FILTER; i++)
-        src[i] = &src_pixels[i * LARGEST_INPUT_SIZE];
-
-    sws = sws_alloc_context();
-    sws->dst_format = AV_PIX_FMT_YUV420P;
-    if (accurate)
-        sws->flags |= SWS_ACCURATE_RND;
-    if (sws_init_context(sws, NULL, NULL) < 0)
-        fail();
-
-    c = sws_internal(sws);
-    ff_sws_init_scale(c);
-
-    for (int isi = 0; isi < FF_ARRAY_ELEMS(input_sizes); isi++) {
-        const int dstW = input_sizes[isi];
-        for (int fsi = 0; fsi < FF_ARRAY_ELEMS(filter_sizes); fsi++) {
-            const int filter_size = filter_sizes[fsi];
-            for (int i = 0; i < filter_size; i++)
-                filter_coeff[i] = -((1 << 12) / (filter_size - 1));
-            filter_coeff[rnd() % filter_size] = (1 << 13) - 1;
-
-            if (check_func(c->yuv2planeX, "yuv2planeX_%d_%d_%s", filter_size, dstW, accurate_str)) {
-                memset(dst0, 0, LARGEST_INPUT_SIZE * sizeof(dst0[0]));
-                memset(dst1, 0, LARGEST_INPUT_SIZE * sizeof(dst1[0]));
-
-                call_ref(&filter_coeff[0], filter_size, src, dst0, dstW, dither, 0);
-                call_new(&filter_coeff[0], filter_size, src, dst1, dstW, dither, 0);
-
-                if (cmp_off_by_n(dst0, dst1, dstW, accurate ? 0 : 2)) {
-                    fail();
-                    printf("failed: yuv2planeX_%d_%d_%s\n", filter_size, dstW, accurate_str);
-                    show_differences(dst0, dst1, dstW);
-                }
-
-                if (dstW == LARGEST_INPUT_SIZE)
-                    bench_new(&filter_coeff[0], filter_size, src, dst1, dstW, dither, 0);
-            }
-        }
-    }
-
-    sws_freeContext(sws);
-}
-#undef LARGEST_FILTER
-#undef LARGEST_INPUT_SIZE
-
-
 static void check_yuv2nv12cX(int accurate)
 {
     SwsContext *sws;
@@ -520,7 +447,4 @@ void checkasm_check_sw_scale(void)
     check_yuv2nv12cX(0);
     check_yuv2nv12cX(1);
     report("yuv2nv12cX");
-    check_yuv2planeX(0);
-    check_yuv2planeX(1);
-    report("yuv2planeX");
 }
